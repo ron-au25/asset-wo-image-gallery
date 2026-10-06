@@ -1,0 +1,107 @@
+.toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+}
+.search {
+    flex: 1 1 14rem;
+    min-width: 10rem;
+}
+.controls {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    flex: 1 1 100%;
+    min-width: 0;
+}
+.sizes {
+    display: flex;
+    flex: none;
+}
+.sizes lightning-button,
+.controls lightning-button-icon {
+    --slds-c-button-spacing-inline-start: 0.5rem;
+    --slds-c-button-spacing-inline-end: 0.5rem;
+    --slds-c-button-sizing-border: 1px;
+}
+.sort {
+    flex: 1 1 5rem;
+    min-width: 4.5rem;
+}
+.views {
+    flex: none;
+}
+.grid {
+    display: grid;
+    gap: 0.75rem;
+}
+.timeline-grid {
+    border-left: 2px solid var(--lwc-colorBorder, #c9c9c9);
+    padding-left: 0.75rem;
+}
+.day-header {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--lwc-colorBackgroundAlt, #fff);
+    font-weight: 700;
+    padding: 0.5rem 0;
+}
+.group {
+    margin-bottom: 0.75rem;
+}
+.card {
+    border: 1px solid var(--lwc-colorBorder, #c9c9c9);
+    border-radius: 0.25rem;
+    overflow: hidden;
+    cursor: pointer;
+    background: var(--lwc-colorBackgroundAlt, #fff);
+}
+.thumb {
+    aspect-ratio: 4 / 3;
+    background: #f3f3f3;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+.placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+}
+.meta {
+    padding: 0.5rem;
+}
+.title {
+    font-weight: 600;
+}
+.tap {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+}
+.record-link {
+    display: block;
+    max-width: 100%;
+}
+.lightbox-img {
+    max-width: 100%;
+    display: block;
+    margin: 0 auto;
+}
+
+/* Map pin colour: green = photo's own location (EXIF or file fields), red = Work Order address fallback */
+.loc-photo lightning-icon {
+    --slds-c-icon-color-foreground-default: #2e844a;
+}
+
+.loc-fallback lightning-icon {
+    --slds-c-icon-color-foreground-default: #ea001e;
+}

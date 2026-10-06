@@ -1,0 +1,188 @@
+<template>
+    <lightning-card title="Image Gallery" icon-name="standard:photo">
+        <div slot="actions">
+            <lightning-button-icon icon-name="utility:refresh" alternative-text="Refresh" title="Refresh" onclick={handleRefresh}></lightning-button-icon>
+        </div>
+
+        <template lwc:if={needsPicker}>
+            <div class="slds-p-horizontal_small slds-m-bottom_small">
+                <lightning-combobox
+                    label="Show photos for"
+                    value={pickedObject}
+                    options={objectOptions}
+                    onchange={handleObject}
+                ></lightning-combobox>
+                <template for:each={pickerKeys} for:item="k">
+                    <lightning-record-picker key={k} label="Record" object-api-name={pickedObject} onchange={handlePick}></lightning-record-picker>
+                </template>
+                <template lwc:if={noRecordYet}>
+                    <div class="slds-m-top_small slds-text-color_weak">Pick a work order or asset to see its photos.</div>
+                </template>
+            </div>
+        </template>
+
+        <div class="slds-p-horizontal_small">
+            <div class="toolbar">
+                <lightning-input
+                    class="search"
+                    type="search"
+                    variant="label-hidden"
+                    placeholder="Search photos, work orders, assets"
+                    value={search}
+                    onchange={handleSearch}
+                ></lightning-input>
+                <div class="controls">
+                    <div class="sizes">
+                        <template for:each={sizeButtons} for:item="b">
+                            <lightning-button
+                                key={b.value}
+                                label={b.value}
+                                data-size={b.value}
+                                variant={b.variant}
+                                onclick={handleSize}
+                            ></lightning-button>
+                        </template>
+                    </div>
+                    <lightning-combobox
+                        class="sort"
+                        variant="label-hidden"
+                        label="Sort by"
+                        value={sortMode}
+                        options={sortOptions}
+                        onchange={handleSortMode}
+                    ></lightning-combobox>
+                    <lightning-button-icon icon-name={sortIcon} alternative-text={sortTitle} title={sortTitle} variant="border-filled" onclick={handleSortDir}></lightning-button-icon>
+                    <lightning-button-group class="views">
+                        <lightning-button-icon icon-name="utility:apps" alternative-text="Grid" title="Grid" data-view="grid" variant={gridVariant} onclick={handleView}></lightning-button-icon>
+                        <lightning-button-icon icon-name="utility:list" alternative-text="Timeline" title="Timeline" data-view="timeline" variant={timelineVariant} onclick={handleView}></lightning-button-icon>
+                    </lightning-button-group>
+                </div>
+            </div>
+            <div class="slds-text-body_small slds-text-color_weak slds-m-vertical_x-small">{countLabel}</div>
+
+            <template lwc:if={showProgress}>
+                <lightning-progress-bar value={exifProgress} size="small" class="slds-m-bottom_x-small"></lightning-progress-bar>
+                <div class="slds-text-body_small slds-text-color_weak">Reading capture times…</div>
+            </template>
+            <template lwc:if={truncatedReason}>
+                <div class="slds-text-color_weak slds-m-bottom_x-small">{truncatedReason}</div>
+            </template>
+            <template lwc:if={error}>
+                <div class="slds-text-color_error slds-p-vertical_small">{error}</div>
+            </template>
+            <template lwc:if={loading}>
+                <div class="slds-is-relative slds-p-vertical_large"><lightning-spinner alternative-text="Loading images" size="small"></lightning-spinner></div>
+            </template>
+            <template lwc:if={isEmpty}>
+                <div class="slds-text-color_weak slds-p-vertical_large slds-align_absolute-center">{emptyText}</div>
+            </template>
+
+            <template for:each={groups} for:item="group">
+                <div key={group.key} class="group">
+                    <template lwc:if={group.showHeader}>
+                        <div class="day-header">{group.label}</div>
+                    </template>
+                    <div class={gridClass} style={gridStyle}>
+                        <template for:each={group.cards} for:item="card">
+                            <div key={card.key} class="card" data-key={card.key} onclick={handleOpen}>
+                                <div class="thumb">
+                                    <template lwc:if={card.noPreview}>
+                                        <div class="placeholder">
+                                            <lightning-icon icon-name="doctype:image" size="large"></lightning-icon>
+                                            <span class="slds-text-body_small">HEIC: no preview</span>
+                                        </div>
+                                    </template>
+                                    <template lwc:elseif={card.failed}>
+                                        <div class="placeholder">
+                                            <lightning-icon icon-name="doctype:image" size="large"></lightning-icon>
+                                            <span class="slds-text-body_small">{card.failLabel}</span>
+                                        </div>
+                                    </template>
+                                    <template lwc:else>
+                                        <img src={card.thumb} alt={card.title} loading="lazy" data-key={card.key} onerror={handleImageError} />
+                                    </template>
+                                </div>
+                                <div class="meta">
+                                    <div class="title slds-truncate" title={card.title}>{card.title}</div>
+                                    <div class="slds-text-body_small slds-text-color_weak">{card.timeLabel}</div>
+                                    <div class="slds-text-body_small slds-text-color_weak loc">
+                                        <template lwc:if={card.hasLocation}>
+                                            <a href="#" class={card.locationClass} data-q={card.mapQuery} title={card.locationTitle} onclick={handleMap}>
+                                                <lightning-icon icon-name="utility:location" size="xx-small"></lightning-icon>
+                                                {card.locationLabel}
+                                            </a>
+                                        </template>
+                                        <template lwc:else>{card.locationLabel}</template>
+                                    </div>
+                                    <template lwc:if={card.recordId}>
+                                        <a href="#" class="tap slds-truncate record-link" data-id={card.recordId} onclick={handleRecord} title={card.recordLabel}>
+                                            {card.recordLabel}
+                                        </a>
+                                        <span class="slds-text-body_small slds-text-color_weak">{card.extraRecords}</span>
+                                    </template>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </template>
+
+            <template lwc:if={hasMore}>
+                <div class="slds-align_absolute-center slds-p-vertical_small">
+                    <lightning-button label="Show more" onclick={handleMore}></lightning-button>
+                </div>
+            </template>
+        </div>
+    </lightning-card>
+
+    <template lwc:if={selected}>
+        <section class="slds-modal slds-fade-in-open" role="dialog" aria-modal="true" aria-label="Image details">
+            <div class="slds-modal__container">
+                <div class="slds-modal__header">
+                    <lightning-button-icon
+                        class="slds-modal__close"
+                        icon-name="utility:close"
+                        variant="bare-inverse"
+                        size="large"
+                        alternative-text="Close"
+                        onclick={handleClose}
+                    ></lightning-button-icon>
+                    <h2 class="slds-modal__title slds-hyphenate">{selected.title}</h2>
+                </div>
+                <div class="slds-modal__content slds-p-around_medium">
+                    <img class="lightbox-img" src={selected.big} alt={selected.title} />
+                    <div class="slds-m-top_small">{selected.timeLabel}</div>
+                    <div class="slds-text-color_weak">{selected.uploadedLabel}</div>
+                    <div class="slds-m-top_x-small">
+                        <template lwc:if={selected.hasLocation}>
+                            <a href="#" class={selected.locationClass} data-q={selected.mapQuery} title={selected.locationTitle} onclick={handleMap}>
+                                <lightning-icon icon-name="utility:location" size="xx-small"></lightning-icon>
+                                {selected.locationLabel}
+                            </a>
+                        </template>
+                        <template lwc:else>No location</template>
+                    </div>
+                    <div class="slds-m-top_small slds-text-title_caps">Related records</div>
+                    <ul>
+                        <template for:each={selected.related} for:item="rel">
+                            <li key={rel.key} class="slds-m-top_xx-small">
+                                <a href="#" class="tap" data-id={rel.id} onclick={handleRecord}>{rel.label}</a>
+                                <div class="slds-text-body_small slds-text-color_weak">{rel.detail}</div>
+                            </li>
+                        </template>
+                    </ul>
+                </div>
+                <div class="slds-modal__footer">
+                    <template lwc:if={selected.fullError}>
+                        <span class="slds-text-color_error slds-m-right_small">{selected.fullError}</span>
+                    </template>
+                    <template lwc:if={selected.showFullButton}>
+                        <lightning-button label="View full size" onclick={handleFull} disabled={selected.fullLoading}></lightning-button>
+                    </template>
+                    <lightning-button variant="brand" label="Close" onclick={handleClose} class="slds-m-left_x-small"></lightning-button>
+                </div>
+            </div>
+        </section>
+        <div class="slds-backdrop slds-backdrop_open"></div>
+    </template>
+</template>

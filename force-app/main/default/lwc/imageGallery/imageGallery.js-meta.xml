@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<LightningComponentBundle xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>67.0</apiVersion>
+    <isExposed>true</isExposed>
+    <masterLabel>Image Gallery</masterLabel>
+    <description>Thumbnails of every image on an Asset or Work Order and its related records.</description>
+    <targets>
+        <target>lightning__RecordPage</target>
+        <target>lightning__RecordAction</target>
+        <target>lightning__GlobalAction</target>
+        <target>lightning__AppPage</target>
+        <target>lightning__HomePage</target>
+    </targets>
+    <targetConfigs>
+        <targetConfig targets="lightning__RecordPage">
+            <supportedFormFactors>
+                <supportedFormFactor type="Large"/>
+                <supportedFormFactor type="Small"/>
+            </supportedFormFactors>
+            <objects>
+                <object>Asset</object>
+                <object>WorkOrder</object>
+                <object>WorkStep</object>
+                <object>WorkOrderLineItem</object>
+                <object>ServiceAppointment</object>
+            </objects>
+        </targetConfig>
+        <targetConfig targets="lightning__RecordAction">
+            <actionType>ScreenAction</actionType>
+        </targetConfig>
+        <targetConfig targets="lightning__GlobalAction">
+            <actionType>ScreenAction</actionType>
+        </targetConfig>
+        <targetConfig targets="lightning__AppPage,lightning__HomePage">
+            <supportedFormFactors>
+                <supportedFormFactor type="Large"/>
+                <supportedFormFactor type="Small"/>
+            </supportedFormFactors>
+        </targetConfig>
+    </targetConfigs>
+</LightningComponentBundle>
