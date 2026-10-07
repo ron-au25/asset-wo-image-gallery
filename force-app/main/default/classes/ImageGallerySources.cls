@@ -25,12 +25,32 @@ public with sharing class ImageGallerySources {
         public Boolean systemMode = false;
         /** Field holding the owning Work Order, whose address is the location fallback. */
         public String workOrderField;
+        /** Field holding the parent record of the same type (Asset.ParentId, WorkOrder.ParentWorkOrderId), for breadcrumbs. */
+        public String parentField;
+        /** Field holding the related Asset, for breadcrumbs. */
+        public String assetField;
+        /** Reads Latitude/Longitude, so photos can be checked against this record's location. */
+        public Boolean geo = false;
+        /** Scheduled start field, so photos can be checked against the appointment time. */
+        public String startField;
         public Source(String objectName, List<Filter> filters, List<String> titleFields, List<String> subtitleFields, List<String> dateFields) {
             this.objectName = objectName;
             this.filters = filters;
             this.titleFields = titleFields;
             this.subtitleFields = subtitleFields;
             this.dateFields = dateFields;
+        }
+    }
+
+    /** A work location a photo is checked against. */
+    public class Place {
+        public String label;
+        public Double lat;
+        public Double lng;
+        public Place(String label, Double lat, Double lng) {
+            this.label = label;
+            this.lat = lat;
+            this.lng = lng;
         }
     }
 
@@ -45,7 +65,18 @@ public with sharing class ImageGallerySources {
         public String dateValue;
         /** Owning Work Order's address, shown when a photo has no location of its own. */
         public String address;
+        /** Names from the Asset down to this record's owner, e.g. Pump A, 00012929. Empty when unknown. */
+        public List<String> breadcrumb;
         public transient Id workOrderId; // transient: never serialized to the LWC
+        public transient Id parentId;
+        public transient Id assetId;
+        public transient Double lat;
+        public transient Double lng;
+        public transient String schedStart;
+        /** Locations a photo on this record is checked against (own, owning Work Order, Asset). Null when none have coordinates. */
+        public List<Place> places;
+        /** Scheduled start times (ISO, GMT) of the relevant Service Appointments. Null when none. */
+        public List<String> starts;
     }
 
     public static final String SET_ASSET = 'ASSET';
@@ -61,21 +92,38 @@ public with sharing class ImageGallerySources {
         workPlan.systemMode = true;
         Source workStep = wo(new Source('WorkStep', f('WorkOrderId', SET_WO), t('Name'), t('Status'), t('StartTime', 'CreatedDate')), 'WorkOrderId');
         workStep.systemMode = true;
+        Source asset = new Source('Asset', f('Id', SET_ASSET), t('Name'), t('SerialNumber', 'Status'), t('InstallDate', 'CreatedDate'));
+        asset.parentField = 'ParentId';
+        asset.geo = true;
+        Source workOrder = wo(new Source('WorkOrder', f('Id', SET_WO), t('WorkOrderNumber'), t('Subject', 'Status'), t('StartDate', 'CreatedDate')), 'Id');
+        workOrder.parentField = 'ParentWorkOrderId';
+        workOrder.assetField = 'AssetId';
+        workOrder.geo = true;
+        Source appointment = wo(new Source('ServiceAppointment', f('ParentRecordId', SET_WO_WOLI), t('AppointmentNumber'), t('Subject', 'Status'), t('ActualStartTime', 'SchedStartTime', 'CreatedDate')), 'ParentRecordId');
+        appointment.parentField = 'ParentRecordId'; // a Work Order or a line item; resolved to the order for the time check
+        appointment.geo = true;
+        appointment.startField = 'SchedStartTime';
+        Source caseSource = new Source('Case', f('Id', SET_CASE), t('CaseNumber'), t('Subject', 'Status'), t('CreatedDate'));
+        caseSource.assetField = 'AssetId';
+        Source measure = wo(new Source('Measure_Point__c', new List<Filter>{ new Filter('Asset__c', SET_ASSET), new Filter('Work_Order__c', SET_WO) },
+            t('Component_Name__c', 'Name'), t('Measure_Type__c', 'Measure_Value__c', 'Defect_Location__c'), t('Update_Date__c', 'CreatedDate')), 'Work_Order__c');
+        measure.assetField = 'Asset__c';
+        Source parts = new Source('SDO_SCOM_Replacement_Parts__c', f('Asset__c', SET_ASSET), t('Name'), t(), t('CreatedDate'));
+        parts.assetField = 'Asset__c';
         return new List<Source>{
-            new Source('Asset', f('Id', SET_ASSET), t('Name'), t('SerialNumber', 'Status'), t('InstallDate', 'CreatedDate')),
-            wo(new Source('WorkOrder', f('Id', SET_WO), t('WorkOrderNumber'), t('Subject', 'Status'), t('StartDate', 'CreatedDate')), 'Id'),
+            asset,
+            workOrder,
             wo(new Source('WorkOrderLineItem', f('Id', SET_WOLI), t('LineItemNumber'), t('Subject', 'Status'), t('StartDate', 'CreatedDate')), 'WorkOrderId'),
             workPlan,
             workStep,
-            wo(new Source('ServiceAppointment', f('ParentRecordId', SET_WO_WOLI), t('AppointmentNumber'), t('Subject', 'Status'), t('ActualStartTime', 'SchedStartTime', 'CreatedDate')), 'ParentRecordId'),
-            new Source('Case', f('Id', SET_CASE), t('CaseNumber'), t('Subject', 'Status'), t('CreatedDate')),
-            wo(new Source('Measure_Point__c', new List<Filter>{ new Filter('Asset__c', SET_ASSET), new Filter('Work_Order__c', SET_WO) },
-                t('Component_Name__c', 'Name'), t('Measure_Type__c', 'Measure_Value__c', 'Defect_Location__c'), t('Update_Date__c', 'CreatedDate')), 'Work_Order__c'),
+            appointment,
+            caseSource,
+            measure,
             wo(new Source('Work_Delay__c', f('Work_Order__c', SET_WO), t('Name__c', 'Name'), t('Delay_Reason__c'), t('Start_Date__c', 'CreatedDate')), 'Work_Order__c'),
             wo(new Source('Safety_Incident__c', f('Work_Order__c', SET_WO), t('Subject__c', 'Name'), t('Injury_Type__c', 'Status__c'), t('Incident_Date__c', 'CreatedDate')), 'Work_Order__c'),
             wo(new Source('Time_Report__c', f('Work_Order__c', SET_WO), t('Name'), t('Resource_Name__c', 'Status__c'), t('Start_Time__c', 'CreatedDate')), 'Work_Order__c'),
             wo(new Source('RS_PurchaseOrder__c', f('Work_Order__c', SET_WO), t('PO_Number__c', 'Name'), t('Supplier_Name__c', 'Status__c'), t('Document_Date__c', 'CreatedDate')), 'Work_Order__c'),
-            new Source('SDO_SCOM_Replacement_Parts__c', f('Asset__c', SET_ASSET), t('Name'), t(), t('CreatedDate'))
+            parts
         };
     }
 
@@ -167,6 +215,19 @@ public with sharing class ImageGallerySources {
         if (source.workOrderField != null) {
             wanted.add(source.workOrderField);
         }
+        if (source.parentField != null) {
+            wanted.add(source.parentField);
+        }
+        if (source.assetField != null) {
+            wanted.add(source.assetField);
+        }
+        if (source.geo) {
+            wanted.add('Latitude');
+            wanted.add('Longitude');
+        }
+        if (source.startField != null) {
+            wanted.add(source.startField);
+        }
         for (String name : wanted) {
             if (usable(fields, name) && !selected.contains(name)) {
                 selected.add(name);
@@ -199,6 +260,13 @@ public with sharing class ImageGallerySources {
         if (owner instanceof Id && ((Id) owner).getSObjectType() == WorkOrder.SObjectType) {
             rec.workOrderId = (Id) owner; // ServiceAppointment parents can be line items; those are skipped
         }
+        rec.parentId = idValue(source.parentField, fields, row);
+        rec.assetId = idValue(source.assetField, fields, row);
+        if (source.geo) {
+            rec.lat = doubleValue('Latitude', fields, row);
+            rec.lng = doubleValue('Longitude', fields, row);
+        }
+        rec.schedStart = source.startField == null || !usable(fields, source.startField) ? null : text(row, source.startField);
         for (String name : source.dateFields) {
             String text = text(row, name);
             if (text != null && usable(fields, name)) {
@@ -208,6 +276,131 @@ public with sharing class ImageGallerySources {
             }
         }
         return rec;
+    }
+
+    private static Double doubleValue(String name, Map<String, Schema.SObjectField> fields, SObject row) {
+        return usable(fields, name) ? (Double) row.get(name) : null;
+    }
+
+    private static Id idValue(String name, Map<String, Schema.SObjectField> fields, SObject row) {
+        return name == null || !usable(fields, name) ? null : (Id) row.get(name);
+    }
+
+    /**
+     * Sets each record's breadcrumb: the Asset, any parent Work Orders and the owning Work Order,
+     * by name or number. Only records inside the gallery's context are named, so ancestors above
+     * the record the gallery was opened from are left out.
+     * @param records Records returned by fetch
+     */
+    public static void applyBreadcrumbs(List<Rec> records) {
+        Map<Id, Rec> byId = new Map<Id, Rec>();
+        for (Rec rec : records) {
+            if (rec.objectName == 'Asset' || rec.objectName == 'WorkOrder') {
+                byId.put(rec.id, rec);
+            }
+        }
+        for (Rec rec : records) {
+            List<String> crumbs = new List<String>();
+            if (rec.objectName == 'Asset') {
+                crumbs.addAll(ancestors(rec.parentId, byId));
+            } else if (rec.objectName == 'WorkOrder') {
+                crumbs.addAll(workOrderTrail(rec.assetId, rec.parentId, byId));
+            } else if (rec.workOrderId != null && byId.containsKey(rec.workOrderId)) {
+                Rec owner = byId.get(rec.workOrderId);
+                crumbs.addAll(workOrderTrail(owner.assetId, owner.parentId, byId));
+                crumbs.add(owner.title);
+            } else if (rec.assetId != null && byId.containsKey(rec.assetId)) {
+                Rec owner = byId.get(rec.assetId);
+                crumbs.addAll(ancestors(owner.parentId, byId));
+                crumbs.add(owner.title);
+            }
+            rec.breadcrumb = crumbs;
+        }
+    }
+
+    /**
+     * Sets each record's places and appointment start times for the geofence and time-fence checks.
+     * A record is checked against its own location, its Work Order's and its Asset's. Times come from
+     * the appointment itself, or for any other record from the Service Appointments under the Work
+     * Order or its line items. Records without coordinates or appointments are left null.
+     * @param records Records returned by fetch
+     */
+    public static void applyFences(List<Rec> records) {
+        Map<Id, Rec> byId = new Map<Id, Rec>();
+        for (Rec rec : records) {
+            byId.put(rec.id, rec);
+        }
+        Map<Id, List<String>> startsByOrder = new Map<Id, List<String>>();
+        for (Rec rec : records) {
+            Id orderId = orderOf(rec, byId)?.id;
+            if (rec.schedStart != null && orderId != null) {
+                if (!startsByOrder.containsKey(orderId)) {
+                    startsByOrder.put(orderId, new List<String>());
+                }
+                startsByOrder.get(orderId).add(rec.schedStart);
+            }
+        }
+        for (Rec rec : records) {
+            Rec order = orderOf(rec, byId);
+            List<Place> places = new List<Place>();
+            addPlace(places, rec);
+            if (order != null && order.id != rec.id) {
+                addPlace(places, order);
+            }
+            Id assetId = rec.objectName == 'Asset' ? rec.id : (rec.assetId ?? order?.assetId);
+            if (assetId != null && assetId != rec.id && byId.containsKey(assetId)) {
+                addPlace(places, byId.get(assetId));
+            }
+            List<String> starts = new List<String>();
+            if (rec.schedStart != null) {
+                starts.add(rec.schedStart);
+            } else if (order != null && startsByOrder.containsKey(order.id)) {
+                starts.addAll(startsByOrder.get(order.id));
+            }
+            rec.places = places.isEmpty() ? null : places;
+            rec.starts = starts.isEmpty() ? null : starts;
+        }
+    }
+
+    /** The Work Order a record belongs to, directly or (for appointments) through a line item. */
+    private static Rec orderOf(Rec rec, Map<Id, Rec> byId) {
+        if (rec.workOrderId != null) {
+            return byId.get(rec.workOrderId);
+        }
+        Rec parent = rec.schedStart == null || rec.parentId == null ? null : byId.get(rec.parentId);
+        return parent?.workOrderId == null ? null : byId.get(parent.workOrderId);
+    }
+
+    private static void addPlace(List<Place> places, Rec rec) {
+        if (rec.lat != null && rec.lng != null && !(rec.lat == 0 && rec.lng == 0)) {
+            places.add(new Place(rec.objectLabel + ' ' + rec.title, rec.lat, rec.lng));
+        }
+    }
+
+    private static List<String> workOrderTrail(Id assetId, Id parentId, Map<Id, Rec> byId) {
+        List<String> trail = new List<String>();
+        if (assetId != null && byId.containsKey(assetId)) {
+            trail.add(byId.get(assetId).title);
+        }
+        trail.addAll(ancestors(parentId, byId));
+        return trail;
+    }
+
+    /** Titles of the parent chain above a record, root first. Stops at the edge of the context or a cycle. */
+    private static List<String> ancestors(Id parentId, Map<Id, Rec> byId) {
+        List<String> trail = new List<String>();
+        Set<Id> seen = new Set<Id>();
+        Id next = parentId;
+        while (next != null && byId.containsKey(next) && seen.add(next)) {
+            Rec parent = byId.get(next);
+            trail.add(parent.title);
+            next = parent.parentId;
+        }
+        List<String> rootFirst = new List<String>();
+        for (Integer i = trail.size() - 1; i >= 0; i--) {
+            rootFirst.add(trail[i]);
+        }
+        return rootFirst;
     }
 
     private static String firstText(SObject row, List<String> names) {

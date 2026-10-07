@@ -114,11 +114,20 @@
                                         </template>
                                         <template lwc:else>{card.locationLabel}</template>
                                     </div>
+                                    <template for:each={card.violations} for:item="v">
+                                        <div key={v.key} class="slds-text-body_small violation" title={v.detail}>
+                                            <lightning-icon icon-name="utility:warning" variant="error" size="xx-small"></lightning-icon>
+                                            {v.short}
+                                        </div>
+                                    </template>
                                     <template lwc:if={card.recordId}>
                                         <a href="#" class="tap slds-truncate record-link" data-id={card.recordId} onclick={handleRecord} title={card.recordLabel}>
                                             {card.recordLabel}
                                         </a>
                                         <span class="slds-text-body_small slds-text-color_weak">{card.extraRecords}</span>
+                                    </template>
+                                    <template lwc:if={card.breadcrumb}>
+                                        <div class="slds-text-body_small slds-text-color_weak slds-truncate" title={card.breadcrumb}>{card.breadcrumb}</div>
                                     </template>
                                 </div>
                             </div>
@@ -142,7 +151,7 @@
                     <lightning-button-icon
                         class="slds-modal__close"
                         icon-name="utility:close"
-                        variant="bare-inverse"
+                        variant="border-filled"
                         size="large"
                         alternative-text="Close"
                         onclick={handleClose}
@@ -162,11 +171,20 @@
                         </template>
                         <template lwc:else>No location</template>
                     </div>
+                    <template for:each={selected.violations} for:item="v">
+                        <div key={v.key} class="slds-m-top_x-small violation">
+                            <lightning-icon icon-name="utility:warning" variant="error" size="xx-small"></lightning-icon>
+                            {v.detail}
+                        </div>
+                    </template>
                     <div class="slds-m-top_small slds-text-title_caps">Related records</div>
                     <ul>
                         <template for:each={selected.related} for:item="rel">
                             <li key={rel.key} class="slds-m-top_xx-small">
                                 <a href="#" class="tap" data-id={rel.id} onclick={handleRecord}>{rel.label}</a>
+                                <template lwc:if={rel.breadcrumb}>
+                                    <div class="slds-text-body_small slds-text-color_weak">{rel.breadcrumb}</div>
+                                </template>
                                 <div class="slds-text-body_small slds-text-color_weak">{rel.detail}</div>
                             </li>
                         </template>

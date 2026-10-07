@@ -119,6 +119,100 @@ private class ImageGalleryControllerTest {
         Assert.isTrue(found, 'Work order record should be present');
     }
 
+    private static List<Object> breadcrumbOf(Map<String, Object> payload, String objectName, String title) {
+        for (Object item : (List<Object>) payload.get('records')) {
+            Map<String, Object> rec = (Map<String, Object>) item;
+            if (rec.get('objectName') == objectName && rec.get('title') == title) {
+                Assert.isFalse(rec.containsKey('parentId') || rec.containsKey('assetId'), 'Breadcrumb lookup Ids are not sent to the client');
+                return (List<Object>) rec.get('breadcrumb');
+            }
+        }
+        Assert.fail('Record not found: ' + objectName + ' ' + title);
+        return null;
+    }
+
+    @IsTest
+    static void shouldBuildBreadcrumbs_WhenParentAssetAnchor() {
+        makeData();
+        Asset parent = [SELECT Id FROM Asset WHERE Name = 'Gallery Parent Asset GT7'];
+        WorkOrder order = [SELECT WorkOrderNumber FROM WorkOrder WHERE Subject = 'Gallery order GT7' LIMIT 1];
+        Test.startTest();
+        Map<String, Object> payload = load(parent.Id);
+        Test.stopTest();
+        Assert.areEqual(0, breadcrumbOf(payload, 'Asset', 'Gallery Parent Asset GT7').size(), 'Anchor asset has no ancestors in context');
+        List<Object> childTrail = breadcrumbOf(payload, 'Asset', 'Gallery Child Asset GT7');
+        Assert.areEqual(1, childTrail.size(), 'Child asset sits under one asset');
+        Assert.areEqual('Gallery Parent Asset GT7', childTrail[0], 'Child asset is under the parent asset');
+        List<Object> orderTrail = breadcrumbOf(payload, 'WorkOrder', order.WorkOrderNumber);
+        Assert.areEqual(1, orderTrail.size(), 'Work order sits under its asset');
+        Assert.areEqual('Gallery Child Asset GT7', orderTrail[0], 'Work order is under its asset');
+    }
+
+    @IsTest
+    static void shouldBuildBreadcrumbs_WhenParentWorkOrderExists() {
+        makeData();
+        WorkOrder parentOrder = [SELECT Id, AssetId, WorkOrderNumber FROM WorkOrder WHERE Subject = 'Gallery order GT7' LIMIT 1];
+        WorkOrder childOrder = new WorkOrder(Subject = 'Gallery child order GT7', ParentWorkOrderId = parentOrder.Id, AssetId = parentOrder.AssetId);
+        insert childOrder;
+        childOrder = [SELECT WorkOrderNumber FROM WorkOrder WHERE Id = :childOrder.Id];
+        Test.startTest();
+        Map<String, Object> payload = load(parentOrder.Id);
+        Test.stopTest();
+        List<Object> trail = breadcrumbOf(payload, 'WorkOrder', childOrder.WorkOrderNumber);
+        Assert.areEqual(2, trail.size(), 'Child order shows its asset and parent order');
+        Assert.areEqual('Gallery Child Asset GT7', trail[0], 'Asset comes first');
+        Assert.areEqual(parentOrder.WorkOrderNumber, trail[1], 'Parent order comes next');
+    }
+
+    private static Map<String, Object> recordOf(Map<String, Object> payload, String objectName) {
+        for (Object item : (List<Object>) payload.get('records')) {
+            Map<String, Object> rec = (Map<String, Object>) item;
+            if (rec.get('objectName') == objectName) {
+                return rec;
+            }
+        }
+        Assert.fail('Record not found: ' + objectName);
+        return null;
+    }
+
+    @IsTest
+    static void shouldReturnPlacesAndStarts_WhenOrderHasCoordinatesAndAppointment() {
+        makeData();
+        WorkOrder order = [SELECT Id, AssetId FROM WorkOrder WHERE Subject = 'Gallery order GT7' LIMIT 1];
+        order.Latitude = -37.8143;
+        order.Longitude = 144.9718;
+        update order;
+        update new Asset(Id = order.AssetId, Latitude = -37.8200, Longitude = 144.9800);
+        Datetime start = Datetime.newInstanceGmt(2026, 9, 15, 9, 0, 0);
+        ServiceAppointment appointment = new ServiceAppointment(
+            ParentRecordId = order.Id, SchedStartTime = start, SchedEndTime = start.addHours(1),
+            EarliestStartTime = start.addDays(-1), DueDate = start.addDays(1), Latitude = -37.8150, Longitude = 144.9720
+        );
+        insert appointment;
+        Test.startTest();
+        Map<String, Object> payload = load(order.Id);
+        Test.stopTest();
+        Map<String, Object> orderRec = recordOf(payload, 'WorkOrder');
+        Assert.areEqual(2, ((List<Object>) orderRec.get('places')).size(), 'Order checks against its own location and its asset');
+        Assert.areEqual('2026-09-15T09:00:00Z', ((List<Object>) orderRec.get('starts'))[0], 'Order uses its appointment start');
+        Assert.isFalse(orderRec.containsKey('lat') || orderRec.containsKey('schedStart'), 'Raw coordinates are not sent');
+        Map<String, Object> appointmentRec = recordOf(payload, 'ServiceAppointment');
+        Assert.areEqual(3, ((List<Object>) appointmentRec.get('places')).size(), 'Appointment checks own, order and asset locations');
+        Assert.areEqual(1, ((List<Object>) appointmentRec.get('starts')).size(), 'Appointment uses only its own start');
+    }
+
+    @IsTest
+    static void shouldLeavePlacesNull_WhenNoCoordinates() {
+        makeData();
+        WorkOrder order = [SELECT Id FROM WorkOrder WHERE Subject = 'Gallery order GT7' LIMIT 1];
+        Test.startTest();
+        Map<String, Object> payload = load(order.Id);
+        Test.stopTest();
+        Map<String, Object> orderRec = recordOf(payload, 'WorkOrder');
+        Assert.isNull(orderRec.get('places'), 'No coordinates, nothing to check against');
+        Assert.isNull(orderRec.get('starts'), 'No appointment, nothing to check against');
+    }
+
     @IsTest
     static void shouldThrow_WhenRecordIdNull() {
         makeData();
@@ -192,6 +286,34 @@ private class ImageGalleryControllerTest {
         Map<String, Object> entry = (Map<String, Object>) exif.get(jpeg.Id);
         Assert.areEqual('2026-09-15T10:30:00', entry.get('t'), 'EXIF time wins');
         Assert.areEqual('exif', entry.get('locSrc'), 'EXIF location wins');
+    }
+
+    /** Reads a camera JPEG that already exists in the org (SeeAllData); skipped where the file is absent. */
+    private static void assertLargeJpegGps(String title, Decimal lat, Decimal lng) {
+        List<ContentVersion> files = [SELECT Id, ContentSize FROM ContentVersion WHERE Title = :title AND IsLatest = true LIMIT 1];
+        if (files.isEmpty()) {
+            return;
+        }
+        Assert.isTrue(files[0].ContentSize > 262144, 'Test file should be a large JPEG');
+        Test.startTest();
+        Map<String, Object> exif = (Map<String, Object>) JSON.deserializeUntyped(ImageGalleryController.getExif(new List<Id>{ files[0].Id }));
+        Test.stopTest();
+        Map<String, Object> entry = (Map<String, Object>) exif.get(files[0].Id);
+        Assert.areEqual('ok', entry.get('s'), title + ' EXIF should be read');
+        Assert.isNotNull(entry.get('t'), title + ' has a capture time');
+        Assert.areEqual(lat, ((Decimal) entry.get('lat')).setScale(6), title + ' latitude');
+        Assert.areEqual(lng, ((Decimal) entry.get('lng')).setScale(6), title + ' longitude');
+        Assert.areEqual('exif', entry.get('locSrc'), title + ' location comes from EXIF');
+    }
+
+    @IsTest
+    static void shouldReadGps_WhenLargeJpeg5MB() {
+        assertLargeJpegGps('Downtown Melbourne', -37.814306, 144.971833);
+    }
+
+    @IsTest
+    static void shouldReadGps_WhenLargeJpeg7MB() {
+        assertLargeJpegGps('Racing in Philip Island', -38.506772, 145.230500);
     }
 
     @IsTest

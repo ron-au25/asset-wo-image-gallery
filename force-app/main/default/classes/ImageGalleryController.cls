@@ -7,7 +7,8 @@ public with sharing class ImageGalleryController {
     private static final Integer MAX_IMAGES = 1000;
     private static final Integer CHUNK_SIZE = 200;
     private static final Integer MAX_TREE_ROWS = 10000;
-    private static final Integer EXIF_FILE_LIMIT = 262144; // 256 KB per JPEG
+    private static final Integer EXIF_FILE_LIMIT = 262144; // JPEGs up to 256 KB are batched together
+    private static final Integer EXIF_JPEG_MAX = 10000000; // larger JPEGs are read one per call, up to 10 MB
     private static final Integer EXIF_HEIC_LIMIT = 2306867; // 2.2 MB per HEIC (blob + base64 copy must fit the 6 MB heap)
     private static final Decimal EXIF_HEAP_FACTOR = 2.4; // heap cost per file byte: blob plus its base64 text
     private static final Integer EXIF_HEAP_BUDGET = 5500000; // heap spent on file bytes per call
@@ -49,19 +50,22 @@ public with sharing class ImageGalleryController {
                 }
             }
             ImageGallerySources.applyWorkOrderAddresses(records);
+            ImageGallerySources.applyBreadcrumbs(records);
+            ImageGallerySources.applyFences(records);
             out.put('records', records);
             out.put('images', findImages(records, out));
             return JSON.serialize(out);
         } catch (AuraHandledException e) {
             throw e;
         } catch (Exception e) {
-            throw new AuraHandledException('Could not load images: ' + e.getMessage());
+            throw withMessage('Could not load images: ' + e.getMessage());
         }
     }
 
     /**
-     * Reads capture time and GPS from the original files' EXIF. JPEG over 256 KB or HEIC over 2.2 MB,
-     * other formats, and files past the per-call heap budget are reported as 'skipped'. Where EXIF has
+     * Reads capture time and GPS from the original files' EXIF. JPEG over 10 MB or HEIC over 2.2 MB,
+     * other formats, and files past the per-call heap budget are reported as 'skipped'. JPEGs over 256 KB
+     * must be sent one per call. Where EXIF has
      * no time or position, ContentVersion Capture_Time__c / Geolocation__c are used when they exist.
      * @param versionIds ContentVersion Ids
      * @return JSON {versionId: {s: ok|none|skipped, t: capturedAt, lat, lng, tSrc, locSrc: exif|record}}
@@ -84,9 +88,11 @@ public with sharing class ImageGalleryController {
             ));
             for (ContentVersion meta : metas.values()) {
                 Boolean heic = IMAGE_EXTENSIONS.contains(meta.FileExtension?.toLowerCase());
-                Integer cost = Integer.valueOf(meta.ContentSize * EXIF_HEAP_FACTOR);
-                Boolean fits = ((EXIF_TYPES.contains(meta.FileType) && meta.ContentSize <= EXIF_FILE_LIMIT)
-                    || (heic && meta.ContentSize <= EXIF_HEIC_LIMIT))
+                Boolean jpeg = EXIF_TYPES.contains(meta.FileType);
+                // A large JPEG takes the whole call: it is only read when it is first in line and nothing else follows it.
+                Boolean large = jpeg && meta.ContentSize > EXIF_FILE_LIMIT;
+                Integer cost = large ? EXIF_HEAP_BUDGET : Integer.valueOf(meta.ContentSize * EXIF_HEAP_FACTOR);
+                Boolean fits = ((jpeg && meta.ContentSize <= EXIF_JPEG_MAX) || (heic && meta.ContentSize <= EXIF_HEIC_LIMIT))
                     && budget + cost <= EXIF_HEAP_BUDGET;
                 if (fits) {
                     budget += cost;
@@ -104,7 +110,7 @@ public with sharing class ImageGalleryController {
             }
             return JSON.serialize(out);
         } catch (Exception e) {
-            throw new AuraHandledException('Could not read photo details: ' + e.getMessage());
+            throw withMessage('Could not read photo details: ' + e.getMessage());
         }
     }
 
@@ -136,8 +142,15 @@ public with sharing class ImageGalleryController {
             }
             return JSON.serialize(out);
         } catch (Exception e) {
-            throw new AuraHandledException('Could not load the photo: ' + e.getMessage());
+            throw withMessage('Could not load the photo: ' + e.getMessage());
         }
+    }
+
+    /** AuraHandledException.getMessage() returns a generic text unless the message is set explicitly. */
+    private static AuraHandledException withMessage(String message) {
+        AuraHandledException ex = new AuraHandledException(message);
+        ex.setMessage(message);
+        return ex;
     }
 
     private static List<String> readableRecordFields() {

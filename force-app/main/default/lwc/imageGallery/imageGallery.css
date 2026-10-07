@@ -97,11 +97,33 @@
     margin: 0 auto;
 }
 
-/* Map pin colour: green = photo's own location (EXIF or file fields), red = Work Order address fallback */
+/* Map pin colour: blue = EXIF location, green = location from the file's record fields, red = Work Order address fallback */
 .loc-photo lightning-icon {
+    --slds-c-icon-color-foreground-default: #0176d3;
+}
+
+.loc-record lightning-icon {
     --slds-c-icon-color-foreground-default: #2e844a;
 }
 
 .loc-fallback lightning-icon {
     --slds-c-icon-color-foreground-default: #ea001e;
+}
+
+/* Lightbox close button: dark icon on a light, bordered circle so it shows on the white header and the dark backdrop */
+.slds-modal__close {
+    --slds-c-button-color-background: #ffffff;
+    --slds-c-button-color-border: #747474;
+    --slds-c-button-text-color: #181818;
+    --slds-c-button-radius-border: 50%;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.15);
+    border-radius: 50%;
+}
+
+/* Violation flags (geofence / time fence) */
+.violation {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    color: #ea001e;
 }

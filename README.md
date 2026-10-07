@@ -1,58 +1,71 @@
-# Salesforce DX Project
+# Asset / Work Order Image Gallery
 
-Salesforce DX is a development approach that brings source-driven development, team collaboration, and continuous integration to the Salesforce Platform. Instead of working directly in an org through a web browser, you work with metadata as source files in a local DX project, track changes in version control, and deploy through automated processes.
+A Lightning Web Component that shows every photo attached to an Asset or Work Order and its related records, in one gallery. Nothing is stored: no custom objects, fields or metadata. Everything is read live from the org.
 
-This project template gets you started with the tools and structure you need to build Salesforce applications using source control, scratch orgs, and the Salesforce CLI.
+Target org: `rsfieldnov25.demo` (flagged as Production by the deploy-gate hook, so deploys need `CONFIRM_PROD=1`). Source API version 67.0.
 
-## Prerequisites
+See `PLAN.md` for the design, verified org facts and build log.
 
-Before you start, make sure you have:
+## What it does
 
-- **Salesforce CLI** - Download from [developer.salesforce.com/tools/salesforcecli](https://developer.salesforce.com/tools/salesforcecli). See [Install Salesforce CLI](https://developer.salesforce.com/docs/atlas.en-us.sfdx_setup.meta/sfdx_setup/sfdx_setup_install_cli.htm) for details.
-- **VS Code with Salesforce Extension Pack** - See [Installation Instructions](https://developer.salesforce.com/docs/platform/sfvscode-extensions/guide/install.html) for details. Includes the Agentforce Vibes extension.
-- **A development org** - Sign up for a free Developer Edition org [here](https://developer.salesforce.com/signup).
-- **Dev Hub enabled** (optional, required to create scratch orgs) - You can enable Dev Hub in your development org under Setup > Dev Hub.  See [Provide Developers Access to Salesforce DX Tools](https://developer.salesforce.com/docs/atlas.en-us.sfdx_dev.meta/sfdx_dev/sfdx_setup_dx_tools.htm).
+- Collects image files (JPG, PNG, GIF, HEIC, WEBP, BMP) linked to the record the gallery is opened from and its related records:
+  Asset (and child assets), Work Order, Work Order Line Item, Work Plan, Work Step, Service Appointment, Case, Measure Point, Work Delay, Safety Incident, Time Report, Purchase Order, Replacement Parts.
+- Opens from an Asset, Work Order or Work Step quick action, or standalone (a picker chooses the Work Order or Asset).
+- Grid and timeline views, thumbnail sizes S/M/L, search across photo titles, uploader, record names and breadcrumbs.
+- Lightbox with the related records, capture time, location and a "View full size" button that shows the original inline instead of downloading it.
 
-## Project Structure
+### Breadcrumb
 
-Your DX project follows this structure:
+Each photo shows the trail of the record it belongs to, by name only, for example `Asset › parent Work Order › Work Order`. Only records inside the gallery's context are named, so ancestors above the record the gallery was opened from are left out. It is searchable.
 
-- **`force-app/main/default/`** - Your metadata source files live in this default package directory. You can configure additional package directories in the `sfdx-project.json` file.
-- **`config/`** - Scratch org definitions and project settings
-- **`scripts/`** - Automation scripts for common tasks
-- **`sfdx-project.json`** - Project manifest that defines package directories, namespace, API version, and other project-level settings
+### Capture time and location (EXIF)
 
-See [Salesforce DX Project Configuration](https://developer.salesforce.com/docs/atlas.en-us.sfdx_dev.meta/sfdx_dev/sfdx_dev_ws_config.htm).
+- Read lazily, so the grid never waits for it. JPEGs up to 10 MB (files over 256 KB are read one per call) and HEIC up to 2.2 MB. Other formats and larger files are skipped.
+- Where the file has no EXIF value, the ContentVersion fields `Capture_Time__c` and `Geolocation__Latitude__s` / `Geolocation__Longitude__s` are used when they exist.
+- Map pin colour: **blue** = location from EXIF, **green** = location from the ContentVersion record fields, **red** = Work Order address fallback (photo has no location of its own).
 
-## Get Started
+### Violation flags
 
-Ready to start developing? The [Get Started with Salesforce DX](https://developer.salesforce.com/docs/atlas.en-us.sfdx_dev.meta/sfdx_dev/sfdx_dev_get_started_dx.htm) guide walks you through your first project, from creating a scratch org to creating a simple Apex class or LWC to deploying your code to a sandbox.
+- **Location:** the photo is further than `GEOFENCE_METERS` (100 m) from every place it is checked against: the photo's record, its Work Order, its Asset and a linked Service Appointment, using their stored Latitude/Longitude. Places with no coordinates are skipped.
+- **Time:** the capture time is further than `TIME_FENCE_MS` (2 h) from the scheduled start of every relevant Service Appointment. A photo on an appointment uses that appointment; any other photo uses the appointments under its Work Order or line items.
+- Both limits are constants at the top of `imageGallery.js`.
+- EXIF times carry no time zone, so they are read in the viewer's browser time zone.
+- Nothing is flagged when there is nothing to check against (no coordinates, no appointment, no location or time on the photo).
 
-## Common Salesforce CLI Commands
+### Sorting
 
-Here are common CLI commands that you'll use the most:
+Upload time, Capture time, **Violations** (grouped: location and time, location, time, none) and **Object** (grouped by the first record the photo belongs to: Asset, Work Order, line item, and so on). The direction button reverses the order.
 
-- `sf org login web`: Authorize an org
-- `sf org open`: Open your org in a browser
-- `sf org create scratch`: Create a scratch org
-- `sf project deploy start`: Deploy metadata to your org
-- `sf project retrieve start`: Retrieve metadata from your org
-- `sf template generate <artifact>`: Scaffold new components, such as Apex classes and triggers, LWC components, Lightning apps, and more
-- `sf apex <command>`: Run Apex tests, run anonymous Apex blocks, and view logs
-- `sf data <command>`: Work with test data
-- `sf alias <command>`: Manage org aliases
-- `sf config <command>`: Configure CLI settings
+## Files (`force-app/main/default/`)
 
-## Use Agentforce Vibes to Build Lightning Apps
+| Path | Purpose |
+|---|---|
+| `lwc/imageGallery` | The gallery UI |
+| `classes/ImageGalleryController.cls` | `getImages`, `getExif`, `getFileData` (all return JSON strings) |
+| `classes/ImageGallerySources.cls` | Record types shown, queries, breadcrumbs, geofence and time-fence data |
+| `classes/ImageExifParser.cls` | JPEG and HEIC EXIF reader |
+| `classes/ImageGalleryControllerTest.cls`, `ImageExifParserTest.cls` | Tests (the controller test uses `SeeAllData=true`) |
+| `quickActions/` | Image Gallery actions for Asset, Work Order, Work Step and a global action |
+| `permissionsets/Image_Gallery_User.permissionset-meta.xml` | Access to the gallery classes |
+| `flexipages/`, `layouts/` | Pages and layouts the actions were added to |
 
-Transform your ideas into custom Lightning apps that extend CRM workflows directly in Lightning Experience. Through natural conversations with Agentforce Vibes, implement custom objects and fields, complex business logic, and dynamic UI components. See [Build a Lightning App Using Agentforce Vibes](https://developer.salesforce.com/docs/platform/einstein-for-devs/guide/lexapp-overview.html).
+## Deploy and test
 
-## Additional Resources
+```bash
+# deploy the gallery only
+CONFIRM_PROD=1 sf project deploy start \
+  --source-dir force-app/main/default/classes --source-dir force-app/main/default/lwc \
+  --target-org rsfieldnov25.demo --wait 20
 
-- [Agentforce Vibes Developer Guide](https://developer.salesforce.com/docs/platform/einstein-for-devs/guide/einstein-overview.html)
-- [Salesforce CLI Installation Guide](https://developer.salesforce.com/docs/atlas.en-us.sfdx_setup.meta/sfdx_setup/sfdx_setup_intro.htm)
-- [Salesforce DX Developer Guide](https://developer.salesforce.com/docs/atlas.en-us.sfdx_dev.meta/sfdx_dev/)
-- [Salesforce CLI Command Reference](https://developer.salesforce.com/docs/atlas.en-us.sfdx_cli_reference.meta/sfdx_cli_reference/)
-- [Salesforce CLI Plugin Development Guide](https://developer.salesforce.com/docs/platform/salesforce-cli-plugin/guide/conceptual-overview.html)
-- [Salesforce VS Code Extensions Documentation](https://developer.salesforce.com/tools/vscode/)
+# deploy runs no tests, so run them separately
+sf apex run test --class-names ImageGalleryControllerTest --class-names ImageExifParserTest \
+  --target-org rsfieldnov25.demo --result-format human --wait 20 --code-coverage
+```
 
+`ImageGalleryControllerTest` reads two real large JPEGs that already exist in the org ("Downtown Melbourne" and "Racing in Philip Island"); a test returns early if its file is missing.
+
+## Known limits
+
+- Files over the Apex heap limits cannot get EXIF; a Range-request callout through a Named Credential would be needed and is not built.
+- Photos linked to several records are grouped and breadcrumbed by the first record only.
+- Each Rec carries its places and start times, so very large galleries (up to 5,000 records, 1,000 images) send a bigger payload.
