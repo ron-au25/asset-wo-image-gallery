@@ -3,7 +3,7 @@
 ## Context
 Techs and supervisors need a fast thumbnail view of every photo tied to an Asset (and its child assets) or a Work Order (and its child WOs and related records), without opening each record. It must work in desktop Lightning and in the Field Service mobile app (online only). It can be opened as a quick action, a record-page component, or from a work step through an LWC quick action, on both web and mobile.
 
-**Hard constraint: no new custom fields or objects.** That includes custom metadata types and ContentVersion fields. Nothing is stored. All data is read live.
+**Hard constraint: no new custom fields or objects.** That includes custom metadata types and ContentVersion fields. Nothing is stored. All data is read live. (Exception, 2026-11-06: the two ContentVersion fields that already existed in the org, `Capture_Time__c` and `Geolocation__c`, are now kept in the project so a new org gets them; see the build log. No other field or object was added.)
 
 Decisions made:
 - Online only.
@@ -335,4 +335,5 @@ A full-screen tab, "Asset & Work Order Photo Hub". It adds to the record actions
 - TESTS (2026-10-07): `ImageGalleryControllerTest` 17 pass in rsfieldnov25.demo (breadcrumb x2, large JPEG x2, places/starts x2 added). The LWC logic (distance, time maths, grouping) has no Jest tests and is not yet checked in the browser.
 - README.md rewritten to describe the project.
 - SPIKE CLEANUP (2026-10-07): deleted the org file "Gallery Spike GPS Test" (WO 00012929) and local `scripts/fixtures/gps_spike.jpg`. The spike Apex class, LWCs (`exifReader`, `imageGallerySpike`) and `*.Image_Gallery_Spike` quick actions were already absent from the org (checked by listing metadata) and from `force-app`.
+- CONTENTVERSION FIELDS IN PROJECT (2026-11-06): the optional fallback fields already existed in `rsfieldnov25.demo` but were not in the repo, so a deploy to a new org would not create them. Retrieved `ContentVersion.Capture_Time__c` (DateTime) and `ContentVersion.Geolocation__c` (Location, decimal, scale 6) into `force-app/main/default/objects/ContentVersion/` (plus the empty `ContentVersion.object-meta.xml` stub). `Geolocation__Latitude__s` / `__Longitude__s`, which the code reads, are sub-fields of `Geolocation__c`. `Image_Gallery_User` now grants read-only field permissions on both. Not yet deployed or tested in a clean org. Checked in code (not run): missing objects are skipped (`ImageGallerySources.fetch` returns empty when the object is absent, `usable()` drops missing fields) and missing ContentVersion fields are skipped (`readableRecordFields`).
 - STILL OPEN: place the quick actions on layouts and pages; Photo Hub tab not started; HEIC thumbnails unverified.

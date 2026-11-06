@@ -1,6 +1,6 @@
 # Asset / Work Order Image Gallery
 
-A Lightning Web Component that shows every photo attached to an Asset or Work Order and its related records, in one gallery. Nothing is stored: no custom objects, fields or metadata. Everything is read live from the org.
+A Lightning Web Component that shows every photo attached to an Asset or Work Order and its related records, in one gallery. Nothing is stored by the gallery. Everything is read live from the org. The only custom metadata in the project is two optional `ContentVersion` fields (`Capture_Time__c`, `Geolocation__c`) that the gallery reads and never writes.
 
 Target org: `rsfieldnov25.demo` (flagged as Production by the deploy-gate hook, so deploys need `CONFIRM_PROD=1`). Source API version 67.0.
 
@@ -21,7 +21,7 @@ Each photo shows the trail of the record it belongs to, by name only, for exampl
 ### Capture time and location (EXIF)
 
 - Read lazily, so the grid never waits for it. JPEGs up to 10 MB (files over 256 KB are read one per call) and HEIC up to 2.2 MB. Other formats and larger files are skipped.
-- Where the file has no EXIF value, the ContentVersion fields `Capture_Time__c` and `Geolocation__Latitude__s` / `Geolocation__Longitude__s` are used when they exist.
+- Where the file has no EXIF value, the ContentVersion fields `Capture_Time__c` and `Geolocation__c` (read as `Geolocation__Latitude__s` / `Geolocation__Longitude__s`) are used when they exist and the user can read them. Both field definitions are in the project and deploy with it; without them the gallery uses EXIF only.
 - Map pin colour: **blue** = location from EXIF, **green** = location from the ContentVersion record fields, **red** = Work Order address fallback (photo has no location of its own).
 
 ### Violation flags
@@ -36,6 +36,36 @@ Each photo shows the trail of the record it belongs to, by name only, for exampl
 
 Upload time, Capture time, **Violations** (grouped: location and time, location, time, none) and **Object** (grouped by the first record the photo belongs to: Asset, Work Order, line item, and so on). The direction button reverses the order.
 
+## User instructions: components and actions
+
+The gallery is one Lightning Web Component, `imageGallery` (label "Image Gallery"). Deploying the project does not place it anywhere: an admin adds it to pages or layouts, as below.
+
+### 1. Give users access
+
+Assign the permission set **Image Gallery User**. It grants the Apex classes and read-only access to the two ContentVersion fields. Users also need normal read access to the records and files they want to see.
+
+### 2. Choose where it appears
+
+| Where | What to add | Works on |
+|---|---|---|
+| Record page | Drag the **Image Gallery** component onto the page in Lightning App Builder | Asset, Work Order, Work Step, Work Order Line Item, Service Appointment (desktop and mobile) |
+| Record quick action | Add the **Image Gallery** action to the object's page layout under Mobile & Lightning Actions | Asset (`Asset.Image_Gallery`), Work Order (`WorkOrder.Image_Gallery`), Work Step (`WorkStep.Image_Gallery`) |
+| Global quick action | Add the global **Image Gallery** action (`Image_Gallery`) to the global publisher layout. It opens with no record, and a picker chooses the Work Order or Asset. | Anywhere global actions show |
+| App page | Drag the component onto a Lightning App Page | Desktop and mobile |
+| Home page | Drag the component onto the Home page | Desktop and mobile |
+
+The four quick actions are all the same component. Only their object differs.
+
+### 3. Using it
+
+- Opened from a record, the gallery shows that record's photos and those of its related records (see "What it does").
+- Opened without a record (global action, app page, home page), choose a Work Order or Asset first.
+- Pick Grid or Timeline, thumbnail size S/M/L, a sort, and search. Click a photo for the lightbox, where "View full size" shows the original.
+
+### Not placed by this project
+
+The project contains the actions and the component but **does not add them to any layout or Flexipage**. Placement is a manual admin step, so existing page layouts are never overwritten on deploy.
+
 ## Files (`force-app/main/default/`)
 
 | Path | Purpose |
@@ -46,7 +76,8 @@ Upload time, Capture time, **Violations** (grouped: location and time, location,
 | `classes/ImageExifParser.cls` | JPEG and HEIC EXIF reader |
 | `classes/ImageGalleryControllerTest.cls`, `ImageExifParserTest.cls` | Tests (the controller test uses `SeeAllData=true`) |
 | `quickActions/` | Image Gallery actions for Asset, Work Order, Work Step and a global action |
-| `permissionsets/Image_Gallery_User.permissionset-meta.xml` | Access to the gallery classes |
+| `objects/ContentVersion/fields/` | `Capture_Time__c` (DateTime) and `Geolocation__c` (Location), the optional record-level fallback for capture time and location |
+| `permissionsets/Image_Gallery_User.permissionset-meta.xml` | Access to the gallery classes, plus read-only field access to the two ContentVersion fields |
 | `flexipages/`, `layouts/` | Pages and layouts the actions were added to |
 
 ## Deploy and test
